@@ -49,7 +49,7 @@ kbase-endpoint = https://ci.kbase.us/services
 
 [NarrativeMethodStore]
 
-method-spec-mongo-host = localhost:27017
+method-spec-mongo-host = localhost:27017/rpc
 method-spec-admin-users = wstester4
 
 method-spec-git-repo-local-dir = nms/local_narrative_method_specs
