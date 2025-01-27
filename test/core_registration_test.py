@@ -124,7 +124,7 @@ class CoreRegistrationTest(unittest.TestCase):
         self.assertIsNone(info['release'])
         self.validate_basic_test_module_info_fields(info, giturl, module_name, owners)
         self.assertEqual(info['dev']['git_commit_hash'], githash)
-        self.assertEqual(info['dev']['git_commit_message'], 'added some basic things')
+        self.assertEqual(info['dev']['git_commit_message'], 'add test folder')
         self.assertEqual(info['dev']['narrative_methods'], ['test_method_1'])
         self.assertEqual(info['dev']['version'], '0.0.1')
         self.assertEqual(info['dev']['timestamp'], timestamp)
