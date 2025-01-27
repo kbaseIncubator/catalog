@@ -17,7 +17,7 @@ class CoreRegistrationTest(unittest.TestCase):
         # assume test user is already approved as a developer
         # (1) register the test repo
         giturl = self.cUtil.get_test_repo_1()
-        githash = '4ada53f318f69a38276e82d0e841e685aa0c2362'  # branch simple_good_repo
+        githash = 'f041513eeb9d8c556b1968969550a8466a6d3643'  # branch simple_good_repo
         registration_id = self.catalog.register_repo(self.cUtil.user_ctx(),
                                                      {'git_url': giturl,
                                                       'git_commit_hash': githash})[0]
