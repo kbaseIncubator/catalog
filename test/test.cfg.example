@@ -39,7 +39,7 @@ docker-base-url = unix://var/run/docker.sock
 
 # Narrative Method Store configuration. Please provide a token.
 # If both are provided, the token is used.
-nms-url = http://localhost:7125
+nms-url = http://localhost:7125/rpc
 nms-admin-token = 
 
 # configs for reference data
@@ -49,7 +49,7 @@ kbase-endpoint = https://ci.kbase.us/services
 
 [NarrativeMethodStore]
 
-method-spec-mongo-host = localhost:27017/rpc
+method-spec-mongo-host = localhost:27017
 method-spec-admin-users = wstester4
 
 method-spec-git-repo-local-dir = nms/local_narrative_method_specs
