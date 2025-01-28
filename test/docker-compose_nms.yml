@@ -17,7 +17,7 @@ services:
       - method_spec_temp_dir=narrative_method_store_temp
       - method_spec_mongo_host=mongo:27017
       - method_spec_mongo_dbname=method_store_repo_db
-      - method_spec_admin_users=""
+      - method_spec_admin_users=${ADMIN_USER}
       - endpoint_host=https://ci.kbase.us
       - endpoint_base=/services
       - method_spec_default_tag=dev
