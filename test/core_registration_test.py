@@ -737,7 +737,7 @@ class CoreRegistrationTest(unittest.TestCase):
 
         # hack for testing!! remove when docker and NMS components can be tested
         from biokbase.catalog.registrar import Registrar
-        Registrar._TEST_WITHOUT_DOCKER = True
+        Registrar._TEST_WITHOUT_DOCKER = False
 
         cls.cUtil = CatalogTestUtil('.')  # TODO: pass in test directory from outside
         cls.cUtil.setUp()
