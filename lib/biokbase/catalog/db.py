@@ -128,7 +128,7 @@ class MongoCatalogDBI:
         # the MongoClient call failed
         # to do: add authMechanism as an argument
         if (mongo_user and mongo_psswd):
-            self.mongo[mongo_db].authenticate(mongo_user, mongo_psswd, mechanism=mongo_authMechanism)
+            self.mongo = MongoClient(f"mongodb://{mongo_user}:{mongo_psswd}@{mongo_host}/{mongo_db}?authMechanism={mongo_authMechanism}")
 
         # Grab a handle to the database and collections
         self.db = self.mongo[mongo_db]
