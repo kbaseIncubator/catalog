@@ -123,18 +123,13 @@ class MongoCatalogDBI:
     def __init__(self, mongo_host, mongo_db, mongo_user, mongo_psswd, mongo_authMechanism):
 
         if (mongo_user and mongo_psswd):
-            self.mongo = MongoClient(
-                mongo_host,
-                username=mongo_user,
-                password=mongo_psswd,
-                authSource=mongo_db,
-                authMechanism=mongo_authMechanism,
-            )
+            self.mongo = MongoClient(f"mongodb://{mongo_user}:{mongo_psswd}@{mongo_host}/{mongo_db}?authMechanism={mongo_authMechanism}")
         else:
-            self.mongo = MongoClient(mongo_host)
+            self.mongo = MongoClient(f"mongodb://{mongo_host}")
 
         try:
             self.mongo.server_info()  # force a call to server
+            print("Connection successful!")
         except ServerSelectionTimeoutError as e:
             error_msg = "Connot connect to Mongo server\n"
             error_msg += "ERROR -- {}:\n{}".format(
@@ -349,7 +344,7 @@ class MongoCatalogDBI:
             query, selection,
             skip=skip,
             limit=limit,
-            sort=[['timestamp', DESCENDING]]))
+            sort=[('timestamp', DESCENDING)]))
 
     # slice arg is used in the mongo query for getting lines.  It is either a
     # pos int (get first n lines), neg int (last n lines), or array [skip, limit]
@@ -943,16 +938,12 @@ class MongoCatalogDBI:
     def list_user_favorites(self, username):
         query = {'user': username}
         selection = {'_id': 0, 'module_name_lc': 1, 'id': 1, 'timestamp': 1}
-        return list(self.favorites.find(
-            query, selection,
-            sort=[['timestamp', DESCENDING]]))
+        return list(self.favorites.find(query, selection).sort('timestamp', DESCENDING))
 
     def list_app_favorites(self, module_name, app_id):
         query = {'module_name_lc': module_name.strip().lower(), 'id': app_id.strip()}
         selection = {'_id': 0, 'user': 1, 'timestamp': 1}
-        return list(self.favorites.find(
-            query, selection,
-            sort=[['timestamp', DESCENDING]]))
+        return list(self.favorites.find(query, selection).sort('timestamp', DESCENDING))
 
     def aggregate_favorites_over_apps(self, module_names_lc):
         ### WARNING! If we switch to Mongo 3.x, the result object will change and this will break
