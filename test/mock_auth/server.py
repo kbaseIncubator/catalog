@@ -17,6 +17,7 @@ if not os.path.exists('/config'):
     sys.exit(1)
 
 endpoints = []
+# The order is preserved here to ensure routes capture requests correctly.
 catalog_mock_auth = ['auth_admin.json', 'auth_invalid.json', 'auth_missing.json', 'auth_non_admin.json']
 for path in catalog_mock_auth:
     if path.endswith('.json'):
