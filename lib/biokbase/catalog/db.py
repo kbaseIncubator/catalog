@@ -1,9 +1,11 @@
 import copy
 import pprint
+import traceback
 
 from pymongo import ASCENDING
 from pymongo import DESCENDING
 from pymongo import MongoClient
+from pymongo.errors import ServerSelectionTimeoutError
 
 '''
 
@@ -120,15 +122,25 @@ class MongoCatalogDBI:
 
     def __init__(self, mongo_host, mongo_db, mongo_user, mongo_psswd, mongo_authMechanism):
 
-        # create the client
-        self.mongo = MongoClient('mongodb://' + mongo_host)
-
-        # Try to authenticate, will throw an exception if the user/psswd is not valid for the db
-        # the pymongo docs say authenticate() is deprecated, but testing putting auth in
-        # the MongoClient call failed
-        # to do: add authMechanism as an argument
         if (mongo_user and mongo_psswd):
-            self.mongo = MongoClient(f"mongodb://{mongo_user}:{mongo_psswd}@{mongo_host}/{mongo_db}?authMechanism={mongo_authMechanism}")
+            self.mongo = MongoClient(
+                mongo_host,
+                username=mongo_user,
+                password=mongo_psswd,
+                authSource=mongo_db,
+                authMechanism=mongo_authMechanism,
+            )
+        else:
+            self.mongo = MongoClient(mongo_host)
+
+        try:
+            self.mongo.server_info()  # force a call to server
+        except ServerSelectionTimeoutError as e:
+            error_msg = "Connot connect to Mongo server\n"
+            error_msg += "ERROR -- {}:\n{}".format(
+                e, "".join(traceback.format_exception(None, e, e.__traceback__))
+            )
+            raise ValueError(error_msg)
 
         # Grab a handle to the database and collections
         self.db = self.mongo[mongo_db]
