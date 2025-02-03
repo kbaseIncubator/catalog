@@ -123,7 +123,11 @@ class MongoCatalogDBI:
     def __init__(self, mongo_host, mongo_db, mongo_user, mongo_psswd, mongo_authMechanism):
 
         if (mongo_user and mongo_psswd):
-            self.mongo = MongoClient(f"mongodb://{mongo_user}:{mongo_psswd}@{mongo_host}/{mongo_db}?authMechanism={mongo_authMechanism}")
+            self.mongo = MongoClient(
+                f"mongodb://{mongo_user}:{mongo_psswd}@{mongo_host}/{mongo_db}?authMechanism={mongo_authMechanism}",
+                maxPoolSize=500,
+                waitQueueTimeoutMS=3000
+            )
         else:
             self.mongo = MongoClient(f"mongodb://{mongo_host}")
 
