@@ -5,7 +5,7 @@ import traceback
 from pymongo import ASCENDING
 from pymongo import DESCENDING
 from pymongo import MongoClient
-from pymongo.errors import ServerSelectionTimeoutError
+from pymongo.errors import ConnectionFailure
 
 '''
 
@@ -134,7 +134,7 @@ class MongoCatalogDBI:
         try:
             self.mongo.server_info()  # force a call to server
             print("Connection successful!")
-        except ServerSelectionTimeoutError as e:
+        except ConnectionFailure as e:
             error_msg = "Connot connect to Mongo server\n"
             error_msg += "ERROR -- {}:\n{}".format(
                 e, "".join(traceback.format_exception(None, e, e.__traceback__))
@@ -940,6 +940,12 @@ class MongoCatalogDBI:
         return self._check_update_result(result)
 
     def list_user_favorites(self, username):
+        try:
+            self.mongo.server_info()
+            print("MongoDB is connected in list_user_favorites().")
+        except ConnectionFailure as e:
+            print(f"MongoDB connection failed list_user_favorites(): {e}")
+
         query = {'user': username}
         selection = {'_id': 0, 'module_name_lc': 1, 'id': 1, 'timestamp': 1}
         return list(self.favorites.find(query, selection).sort('timestamp', DESCENDING))
