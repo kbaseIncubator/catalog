@@ -122,12 +122,14 @@ class MongoCatalogDBI:
 
     def __init__(self, mongo_host, mongo_db, mongo_user, mongo_psswd, mongo_authMechanism):
 
+        self.mongo_host = mongo_host
+        self.mongo_db = mongo_db
+        self.mongo_user = mongo_user
+        self.mongo_psswd = mongo_psswd
+        self.mongo_authMechanism = mongo_authMechanism
+
         if (mongo_user and mongo_psswd):
-            self.mongo = MongoClient(
-                f"mongodb://{mongo_user}:{mongo_psswd}@{mongo_host}/{mongo_db}?authMechanism={mongo_authMechanism}",
-                maxPoolSize=500,
-                waitQueueTimeoutMS=3000
-            )
+            self.mongo = MongoClient(f"mongodb://{mongo_user}:{mongo_psswd}@{mongo_host}/{mongo_db}?authMechanism={mongo_authMechanism}")
         else:
             self.mongo = MongoClient(f"mongodb://{mongo_host}")
 
@@ -951,6 +953,18 @@ class MongoCatalogDBI:
         return list(self.favorites.find(query, selection).sort('timestamp', DESCENDING))
 
     def list_app_favorites(self, module_name, app_id):
+        try:
+            # Attempt to ping the server
+            self.mongo.admin.command('ping')
+            print("MongoDB is connected!")
+        except ConnectionFailure:
+            print("MongoDB connection failed!")
+            print("Reinitiating Mongo Client!")
+            if (self.mongo_user and self.mongo_psswd):
+                self.mongo = MongoClient(f"mongodb://{self.mongo_user}:{self.mongo_psswd}@{self.mongo_host}/{self.mongo_db}?authMechanism={self.mongo_authMechanism}")
+            else:
+                self.mongo = MongoClient(f"mongodb://{self.mongo_host}")
+
         query = {'module_name_lc': module_name.strip().lower(), 'id': app_id.strip()}
         selection = {'_id': 0, 'user': 1, 'timestamp': 1}
         return list(self.favorites.find(query, selection).sort('timestamp', DESCENDING))
