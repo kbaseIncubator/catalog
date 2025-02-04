@@ -22,11 +22,8 @@ threads="$(python $KB_SERVICE_DIR/get_kb_config.py $KB_SERVICE_NAME threads)"
 cheaper="$(python $KB_SERVICE_DIR/get_kb_config.py $KB_SERVICE_NAME cheaper)"
 http_timeout="$(python $KB_SERVICE_DIR/get_kb_config.py $KB_SERVICE_NAME http-timeout)"
 
-uwsgi --master \
-    --processes $processes \
-    --threads $threads \
-    --cheaper $cheaper \
-    --http :$port \
-    --http-timeout $http_timeout \
-    --pidfile $pid_file \
-    --wsgi-file $wsgi_file
+gunicorn --worker-class gevent \
+         --workers $processes \
+         --timeout $http_timeout \
+         --bind :$port \
+         $wsgi_file
