@@ -13,3 +13,5 @@ jobs:
         KBASE_CI_TOKEN2: ${{ secrets.KBASE_CI_TOKEN2 }}
         KBASE_TEST_TOKEN: ${{ secrets.KBASE_TEST_TOKEN }}
         KBASE_TEST_TOKEN2: ${{ secrets.KBASE_TEST_TOKEN2 }}
+        KBASE_BOT_TOKEN_CI: ${{ secrets.KBASE_BOT_TOKEN_CI }}
+        KBASE_BOT_USER_CI: ${{ secrets.KBASE_BOT_USER_CI }}
