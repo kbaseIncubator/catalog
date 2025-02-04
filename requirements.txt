@@ -4,5 +4,6 @@ gitpython
 pyyaml
 semantic_version
 coverage
+uwsgi==2.0.18
 gunicorn
 JSONRPCBase==0.2.0
