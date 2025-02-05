@@ -1021,29 +1021,11 @@ class MongoCatalogDBI:
         return self._check_update_result(result)
 
     def list_user_favorites(self, username):
-        try:
-            self.mongo.server_info()
-            print("MongoDB is connected in list_user_favorites().")
-        except ConnectionFailure as e:
-            print(f"MongoDB connection failed list_user_favorites(): {e}")
-
         query = {'user': username}
         selection = {'_id': 0, 'module_name_lc': 1, 'id': 1, 'timestamp': 1}
         return list(self.favorites.find(query, selection).sort('timestamp', DESCENDING))
 
     def list_app_favorites(self, module_name, app_id):
-        try:
-            # Attempt to ping the server
-            self.mongo.admin.command('ping')
-            print("MongoDB is connected!")
-        except ConnectionFailure:
-            print("MongoDB connection failed!")
-            print("Reinitiating Mongo Client!")
-            if (self.mongo_user and self.mongo_psswd):
-                self.mongo = MongoClient(f"mongodb://{self.mongo_user}:{self.mongo_psswd}@{self.mongo_host}/{self.mongo_db}?authMechanism={self.mongo_authMechanism}")
-            else:
-                self.mongo = MongoClient(f"mongodb://{self.mongo_host}")
-
         query = {'module_name_lc': module_name.strip().lower(), 'id': app_id.strip()}
         selection = {'_id': 0, 'user': 1, 'timestamp': 1}
         return list(self.favorites.find(query, selection).sort('timestamp', DESCENDING))
