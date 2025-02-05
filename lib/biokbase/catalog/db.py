@@ -156,12 +156,10 @@ class MongoCatalogDBI:
                 # Grab a handle to the database
                 self.db = self.mongo[self.mongo_db]
 
-                # Check DB schema
-                self.check_db_schema()
-
                 # Mark the client as initialized
                 self._mongo_client_initialized = True
 
+                # Check db schema
                 self.check_db_schema()
 
             except ConnectionFailure as e:
