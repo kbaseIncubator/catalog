@@ -33,9 +33,12 @@ class StartupTest(unittest.TestCase):
         self.cUtil.setUpEmpty(db_version=2525)
 
         catalog = None
+        ctx = self.cUtil.user_ctx()
+        user = ctx['user_id']
         with self.assertRaises(IOError) as e:
             catalog = Catalog(self.cUtil.getCatalogConfig())
-            catalog.cc.db.check_db_schema()
+            # Trigger the lazy load collection, which will call the check_db_schema() method.
+            catalog.list_favorites(ctx, user)[0]
         self.assertEqual(str(e.exception),
                          'Incompatible DB versions.  Expecting DB V4, found DV V2525. You are '
                          'probably running an old version of the service.  Start up failed.')
