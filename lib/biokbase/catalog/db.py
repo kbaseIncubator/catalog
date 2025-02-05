@@ -135,7 +135,7 @@ class MongoCatalogDBI:
         self.db = None
         self.index_created = defaultdict(int)
 
-    def _initiate_mongo_client(self):
+    def _initialize_mongo_client(self):
         """Initialize MongoDB client and collections lazily."""
         if not self._mongo_client_initialized:
             try:
