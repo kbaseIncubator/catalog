@@ -13,19 +13,24 @@ class StartupTest(unittest.TestCase):
         # Test normal startup, should work
         self.cUtil.setUp()
         catalog = Catalog(self.cUtil.getCatalogConfig())
+        print(f"1. output catalog.version is: {catalog.version(self.cUtil.anonymous_ctx())[0]}")
         self.assertTrue(semantic_version.validate(catalog.version(self.cUtil.anonymous_ctx())[0]))
 
         # Test empty startup without DB version should work
         self.cUtil.setUpEmpty()
         catalog = Catalog(self.cUtil.getCatalogConfig())
+        print(f"2. output catalog.version is: {catalog.version(self.cUtil.anonymous_ctx())[0]}")
         self.assertTrue(semantic_version.validate(catalog.version(self.cUtil.anonymous_ctx())[0]))
 
         # Test empty startup with several different valid versions should work
         self.cUtil.setUpEmpty(db_version=3)
         catalog = Catalog(self.cUtil.getCatalogConfig())
+        print(f"3. output catalog.version is: {catalog.version(self.cUtil.anonymous_ctx())[0]}")
         self.assertTrue(semantic_version.validate(catalog.version(self.cUtil.anonymous_ctx())[0]))
+
         self.cUtil.setUpEmpty(db_version=4)
         catalog = Catalog(self.cUtil.getCatalogConfig())
+        print(f"4. output catalog.version is: {catalog.version(self.cUtil.anonymous_ctx())[0]}")
         self.assertTrue(semantic_version.validate(catalog.version(self.cUtil.anonymous_ctx())[0]))
 
         # Startup with version that is too high should fail
