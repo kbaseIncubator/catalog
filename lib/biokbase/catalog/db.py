@@ -1434,13 +1434,14 @@ class MongoCatalogDBI:
     # version 1 kept released module versions in a map, version 2 updates that to a list
     # and adds dynamic service tags
     def update_db_1_to_2(self):
-        for m in self.modules.find({'release_versions': {'$exists': True}}):
+        modules_collection = self.db[MongoCatalogDBI._MODULES]
+        for m in modules_collection.find({'release_versions': {'$exists': True}}):
             release_version_list = []
             for timestamp in m['release_versions']:
                 m['release_versions'][timestamp]['dynamic_service'] = 0
                 release_version_list.append(m['release_versions'][timestamp])
 
-            self.modules.update_one(
+            modules_collection.update_one(
                 {'_id': m['_id']},
                 {
                     '$unset': {'release_versions': ''},
@@ -1449,33 +1450,34 @@ class MongoCatalogDBI:
 
             # make sure everything has the dynamic service flag
             if not 'dynamic_service' in m['info']:
-                self.modules.update_one(
+                modules_collection.update_one(
                     {'_id': m['_id']},
                     {'$set': {'info.dynamic_service': 0}})
 
             if m['current_versions']['release']:
                 if not 'dynamic_service' in m['current_versions']['release']:
-                    self.modules.update_one(
+                    modules_collection.update_one(
                         {'_id': m['_id']},
                         {'$set': {'current_versions.release.dynamic_service': 0}})
 
             if m['current_versions']['beta']:
                 if not 'dynamic_service' in m['current_versions']['beta']:
-                    self.modules.update_one(
+                    modules_collection.update_one(
                         {'_id': m['_id']},
                         {'$set': {'current_versions.beta.dynamic_service': 0}})
 
             if m['current_versions']['dev']:
                 if not 'dynamic_service' in m['current_versions']['dev']:
-                    self.modules.update_one(
+                    modules_collection.update_one(
                         {'_id': m['_id']},
                         {'$set': {'current_versions.dev.dynamic_service': 0}})
 
         # also ensure the execution stats fields have correct names
-        self.exec_stats_apps.update_many({'avg_queue_time': {'$exists': True}},
+        exec_stats_apps_colleciton = self.db[MongoCatalogDBI._EXEC_STATS_APPS]
+        exec_stats_apps_colleciton.update_many({'avg_queue_time': {'$exists': True}},
                                          {'$rename': {'avg_queue_time': 'total_queue_time',
                                                       'avg_exec_time': 'total_exec_time'}})
-        self.exec_stats_users.update_many({'avg_queue_time': {'$exists': True}},
+        exec_stats_apps_colleciton.update_many({'avg_queue_time': {'$exists': True}},
                                           {'$rename': {'avg_queue_time': 'total_queue_time',
                                                        'avg_exec_time': 'total_exec_time'}})
 
@@ -1483,15 +1485,17 @@ class MongoCatalogDBI:
     # a separate module versions collection.  
     def update_db_2_to_3(self):
 
-        self.module_versions.create_index('module_name_lc', sparse=False)
-        self.module_versions.create_index('git_commit_hash', sparse=False)
-        self.module_versions.create_index([
+        module_versions_collection = self.db[MongoCatalogDBI._MODULE_VERSIONS]
+        module_versions_collection.create_index('module_name_lc', sparse=False)
+        module_versions_collection.create_index('git_commit_hash', sparse=False)
+        module_versions_collection.create_index([
             ('module_name_lc', ASCENDING),
             ('git_commit_hash', ASCENDING)],
             unique=True, sparse=False)
 
+        modules_collection = self.db[MongoCatalogDBI._MODULES]
         # update all module versions
-        for m in self.modules.find({}):
+        for m in modules_collection.find({}):
 
             # skip modules that have not been properly registered, might want to delete these later
             if 'module_name' not in m or 'module_name_lc' not in m:
@@ -1507,14 +1511,14 @@ class MongoCatalogDBI:
                 rVer['released'] = 1
                 self.prepare_version_doc_for_db_2_to_3_update(rVer, m)
                 try:
-                    self.module_versions.insert_one(rVer)
+                    module_versions_collection.insert_one(rVer)
                 except:
                     print(' - Warning - ' + rVer['module_name'] + '.' + rVer[
                         'git_commit_hash'] + ' already inserted, skipping.')
                 new_release_version_list.append({
                     'git_commit_hash': rVer['git_commit_hash']
                 })
-            self.modules.update_one(
+            modules_collection.update_one(
                 {'_id': m['_id']},
                 {'$set': {'release_version_list': new_release_version_list}}
             )
@@ -1527,19 +1531,19 @@ class MongoCatalogDBI:
                     self.prepare_version_doc_for_db_2_to_3_update(modVer, m)
                     if modVer.get('git_commit_hash') is not None:
                         try:
-                            self.module_versions.insert_one(modVer)
+                            module_versions_collection.insert_one(modVer)
                         except Exception as e:
                             # we expect this to happen for all 'release' tags and if, say, a
                             # version still tagged as dev/beta has been released
                             print(f" - Warning - {tag} ver of {modVer['module_name']}."
                                   f"{modVer['git_commit_hash']} already inserted, skipping.")
-                        self.modules.update_one(
+                        modules_collection.update_one(
                             {'_id': m['_id']},
                             {'$set': {'current_versions.' + tag: {
                                 'git_commit_hash': modVer['git_commit_hash']}}}
                         )
                     else:
-                        self.modules.update_one(
+                        modules_collection.update_one(
                             {'_id': m['_id']},
                             {'$set': {'current_versions.' + tag: None}}
                         )
@@ -1567,20 +1571,23 @@ class MongoCatalogDBI:
     def update_db_3_to_4(self):
 
         # make sure we don't have any indecies on the collections
-        self.volume_mounts.drop_indexes()
-        self.client_groups.drop_indexes()
+        volume_mounts_collection = self.db[MongoCatalogDBI._VOLUME_MOUNTS]
+        client_groups_collection = self.db[MongoCatalogDBI._CLIENT_GROUPS]
+
+        volume_mounts_collection.drop_indexes()
+        client_groups_collection.drop_indexes()
 
         # update the volume_mounts, just need to rename app_id to function_name
-        for vm in self.volume_mounts.find({}):
+        for vm in volume_mounts_collection.find({}):
             if 'app_id' in vm and 'function_name' not in vm:
-                self.volume_mounts.update_one(
+                volume_mounts_collection.update_one(
                     {'_id': vm['_id']},
                     {'$set': {'function_name': vm['app_id']}, '$unset': {'app_id': 1}}
                 )
 
-        for cg in self.client_groups.find({}):
+        for cg in client_groups_collection.find({}):
             if 'app_id' in cg:
-                self.client_groups.delete_one({'_id': cg['_id']})
+                client_groups_collection.delete_one({'_id': cg['_id']})
                 tokens = cg['app_id'].split('/')
                 if len(tokens) != 2:
                     print(
@@ -1592,4 +1599,4 @@ class MongoCatalogDBI:
                     'function_name': tokens[1],
                     'client_groups': cg['client_groups']
                 }
-                self.client_groups.insert_one(new_cg)
+                client_groups_collection.insert_one(new_cg)
