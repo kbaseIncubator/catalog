@@ -1,6 +1,7 @@
 import copy
 import pprint
 import traceback
+from collections import defaultdict
 
 from pymongo import ASCENDING
 from pymongo import DESCENDING
@@ -128,135 +129,207 @@ class MongoCatalogDBI:
         self.mongo_psswd = mongo_psswd
         self.mongo_authMechanism = mongo_authMechanism
 
-        if (mongo_user and mongo_psswd):
-            self.mongo = MongoClient(f"mongodb://{mongo_user}:{mongo_psswd}@{mongo_host}/{mongo_db}?authMechanism={mongo_authMechanism}")
-        else:
-            self.mongo = MongoClient(f"mongodb://{mongo_host}")
+        # MongoDB client and database initialization deferred
+        self._mongo_client_initialized = False
+        self.mongo = None
+        self.db = None
+        self.index_created = defaultdict(int)
 
-        try:
-            self.mongo.server_info()  # force a call to server
-            print("Connection successful!")
-        except ConnectionFailure as e:
-            error_msg = "Connot connect to Mongo server\n"
-            error_msg += "ERROR -- {}:\n{}".format(
-                e, "".join(traceback.format_exception(None, e, e.__traceback__))
-            )
-            raise ValueError(error_msg)
+    def _initiate_mongo_client(self):
+        """Initialize MongoDB client and collections lazily."""
+        if not self._mongo_client_initialized:
+            try:
+                if self.mongo_user and self.mongo_psswd:
+                    # Connection string with authentication
+                    self.mongo = MongoClient(
+                        f"mongodb://{self.mongo_user}:{self.mongo_psswd}@{self.mongo_host}/{self.mongo_db}?authMechanism={self.mongo_authMechanism}"
+                    )
+                else:
+                    # Connection string without authentication
+                    self.mongo = MongoClient(f"mongodb://{self.mongo_host}")
 
-        # Grab a handle to the database and collections
-        self.db = self.mongo[mongo_db]
-        self.modules = self.db[MongoCatalogDBI._MODULES]
-        self.module_versions = self.db[MongoCatalogDBI._MODULE_VERSIONS]
+                # Force a call to server to verify the connection
+                self.mongo.server_info()
+                print("Connection successful!")
 
-        self.local_functions = self.db[MongoCatalogDBI._LOCAL_FUNCTIONS]
-        self.developers = self.db[MongoCatalogDBI._DEVELOPERS]
-        self.build_logs = self.db[MongoCatalogDBI._BUILD_LOGS]
-        self.favorites = self.db[MongoCatalogDBI._FAVORITES]
-        self.client_groups = self.db[MongoCatalogDBI._CLIENT_GROUPS]
-        self.volume_mounts = self.db[MongoCatalogDBI._VOLUME_MOUNTS]
+                # Grab a handle to the database
+                self.db = self.mongo[self.mongo_db]
 
-        self.exec_stats_raw = self.db[MongoCatalogDBI._EXEC_STATS_RAW]
-        self.exec_stats_apps = self.db[MongoCatalogDBI._EXEC_STATS_APPS]
-        self.exec_stats_users = self.db[MongoCatalogDBI._EXEC_STATS_USERS]
+                # Mark the client as initialized
+                self._mongo_client_initialized = True
 
-        self.secure_config_params = self.db[MongoCatalogDBI._SECURE_CONFIG_PARAMS]
+            except ConnectionFailure as e:
+                error_msg = "Cannot connect to Mongo server\n"
+                error_msg += "ERROR -- {}:\n{}".format(
+                    e, "".join(traceback.format_exception(None, e, e.__traceback__))
+                )
+                raise ValueError(error_msg)
 
-        # check the db schema
-        self.check_db_schema()
+    def _get_collection(self, collection_name):
+        """Lazily load collections."""
+        self._initialize_mongo_client()
+        if not self.index_created[collection_name]:
+            self._create_indexes(collection_name)
+            self.index_created[collection_name] = 1
+        return self.db[collection_name]
+
+    # Define getters for each collection
+    @property
+    def modules(self):
+        return self._get_collection(MongoCatalogDBI._MODULES)
+
+    @property
+    def module_versions(self):
+        return self._get_collection(MongoCatalogDBI._MODULE_VERSIONS)
+
+    @property
+    def local_functions(self):
+        return self._get_collection(MongoCatalogDBI._LOCAL_FUNCTIONS)
+
+    @property
+    def developers(self):
+        return self._get_collection(MongoCatalogDBI._DEVELOPERS)
+
+    @property
+    def build_logs(self):
+        return self._get_collection(MongoCatalogDBI._BUILD_LOGS)
+
+    @property
+    def favorites(self):
+        return self._get_collection(MongoCatalogDBI._FAVORITES)
+
+    @property
+    def client_groups(self):
+        return self._get_collection(MongoCatalogDBI._CLIENT_GROUPS)
+
+    @property
+    def volume_mounts(self):
+        return self._get_collection(MongoCatalogDBI._VOLUME_MOUNTS)
+
+    @property
+    def exec_stats_raw(self):
+        return self._get_collection(MongoCatalogDBI._EXEC_STATS_RAW)
+
+    @property
+    def exec_stats_apps(self):
+        return self._get_collection(MongoCatalogDBI._EXEC_STATS_APPS)
+
+    @property
+    def exec_stats_users(self):
+        return self._get_collection(MongoCatalogDBI._EXEC_STATS_USERS)
+
+    @property
+    def secure_config_params(self):
+        return self._get_collection(MongoCatalogDBI._SECURE_CONFIG_PARAMS)
+
+    def _create_indexes(self, collection_name):
+        """Create indexes for the given collection lazily."""
+        collection = self.db[collection_name]
 
         # Make sure we have an index on module and git_repo_url
-        self.module_versions.create_index('module_name_lc', sparse=False)
-        self.module_versions.create_index('git_commit_hash', sparse=False)
-        self.module_versions.create_index([
-            ('module_name_lc', ASCENDING),
-            ('git_commit_hash', ASCENDING)],
-            unique=True, sparse=False)
+        if collection_name == MongoCatalogDBI._MODULE_VERSIONS:
+            collection.create_index('module_name_lc', sparse=False)
+            collection.create_index('git_commit_hash', sparse=False)
+            collection.create_index([
+                ('module_name_lc', ASCENDING),
+                ('git_commit_hash', ASCENDING)],
+                unique=True, sparse=False)
 
+        elif collection_name == MongoCatalogDBI._LOCAL_FUNCTIONS:
         # Make sure we have a unique index on module_name_lc and git_commit_hash
-        self.local_functions.create_index('function_id')
-        self.local_functions.create_index([
-            ('module_name_lc', ASCENDING),
-            ('function_id', ASCENDING),
-            ('git_commit_hash', ASCENDING)],
-            unique=True, sparse=False)
+            collection.create_index('function_id')
+            collection.create_index([
+                ('module_name_lc', ASCENDING),
+                ('function_id', ASCENDING),
+                ('git_commit_hash', ASCENDING)],
+                unique=True, sparse=False)
 
-        # local function indecies
-        self.local_functions.create_index('module_name_lc')
-        self.local_functions.create_index('git_commit_hash')
-        self.local_functions.create_index('function_id')
-        self.local_functions.create_index([
-            ('module_name_lc', ASCENDING),
-            ('function_id', ASCENDING),
-            ('git_commit_hash', ASCENDING)],
-            unique=True, sparse=False)
+            # local function indecies
+            collection.create_index('module_name_lc')
+            collection.create_index('git_commit_hash')
+            collection.create_index('function_id')
+            collection.create_index([
+                ('module_name_lc', ASCENDING),
+                ('function_id', ASCENDING),
+                ('git_commit_hash', ASCENDING)],
+                unique=True, sparse=False)
 
         # developers indecies
-        self.developers.create_index('kb_username', unique=True)
+        elif collection_name == MongoCatalogDBI._DEVELOPERS:
+            collection.create_index('kb_username', unique=True)
 
-        self.build_logs.create_index('registration_id', unique=True)
-        self.build_logs.create_index('module_name_lc')
-        self.build_logs.create_index('timestamp')
-        self.build_logs.create_index('registration')
-        self.build_logs.create_index('git_url')
-        self.build_logs.create_index('current_versions.release.release_timestamp')
+        elif collection_name == MongoCatalogDBI._BUILD_LOGS:
+            collection.create_index('registration_id', unique=True)
+            collection.create_index('module_name_lc')
+            collection.create_index('timestamp')
+            collection.create_index('registration')
+            collection.create_index('git_url')
+            collection.create_index('current_versions.release.release_timestamp')
 
         # for favorites
-        self.favorites.create_index('user')
-        self.favorites.create_index('module_name_lc')
-        self.favorites.create_index('id')
-        # you can only favorite a method once, so put a unique index on the triple
-        self.favorites.create_index([
-            ('user', ASCENDING),
-            ('id', ASCENDING),
-            ('module_name_lc', ASCENDING)],
-            unique=True, sparse=False)
+        elif collection_name == MongoCatalogDBI._FAVORITES:
+            collection.create_index('user')
+            collection.create_index('module_name_lc')
+            collection.create_index('id')
+            # you can only favorite a method once, so put a unique index on the triple
+            collection.create_index([
+                ('user', ASCENDING),
+                ('id', ASCENDING),
+                ('module_name_lc', ASCENDING)],
+                unique=True, sparse=False)
 
         # execution stats
-        self.exec_stats_raw.create_index('user_id',
-                                         unique=False, sparse=False)
-        self.exec_stats_raw.create_index([('app_module_name', ASCENDING),
-                                          ('app_id', ASCENDING)],
-                                         unique=False, sparse=True)
-        self.exec_stats_raw.create_index([('func_module_name', ASCENDING),
-                                          ('func_name', ASCENDING)],
-                                         unique=False, sparse=True)
-        self.exec_stats_raw.create_index('creation_time',
-                                         unique=False, sparse=False)
-        self.exec_stats_raw.create_index('finish_time',
-                                         unique=False, sparse=False)
+        elif collection_name == MongoCatalogDBI._EXEC_STATS_RAW:
+            collection.create_index('user_id',
+                                            unique=False, sparse=False)
+            collection.create_index([('app_module_name', ASCENDING),
+                                            ('app_id', ASCENDING)],
+                                            unique=False, sparse=True)
+            collection.create_index([('func_module_name', ASCENDING),
+                                            ('func_name', ASCENDING)],
+                                            unique=False, sparse=True)
+            collection.create_index('creation_time',
+                                            unique=False, sparse=False)
+            collection.create_index('finish_time',
+                                            unique=False, sparse=False)
 
-        self.exec_stats_apps.create_index('module_name',
-                                          unique=False, sparse=True)
-        self.exec_stats_apps.create_index([('full_app_id', ASCENDING),
-                                           ('type', ASCENDING),
-                                           ('time_range', ASCENDING)],
-                                          unique=True, sparse=False)
-        self.exec_stats_apps.create_index([('type', ASCENDING),
-                                           ('time_range', ASCENDING)],
-                                          unique=False, sparse=False)
-
-        self.exec_stats_users.create_index([('user_id', ASCENDING),
+        elif collection_name == MongoCatalogDBI._EXEC_STATS_APPS:
+            collection.create_index('module_name',
+                                            unique=False, sparse=True)
+            collection.create_index([('full_app_id', ASCENDING),
                                             ('type', ASCENDING),
                                             ('time_range', ASCENDING)],
-                                           unique=True, sparse=False)
+                                            unique=True, sparse=False)
+            collection.create_index([('type', ASCENDING),
+                                            ('time_range', ASCENDING)],
+                                            unique=False, sparse=False)
+
+        elif collection_name == MongoCatalogDBI._EXEC_STATS_USERS:
+            collection.create_index([('user_id', ASCENDING),
+                                                ('type', ASCENDING),
+                                                ('time_range', ASCENDING)],
+                                            unique=True, sparse=False)
 
         # client groups and volume mounts
-        self.client_groups.create_index([('module_name_lc', ASCENDING),
+        elif collection_name == MongoCatalogDBI._CLIENT_GROUPS:
+            collection.create_index([('module_name_lc', ASCENDING),
                                          ('function_name', ASCENDING)],
                                         unique=True, sparse=False)
 
-        self.volume_mounts.create_index([('client_group', ASCENDING),
-                                         ('module_name_lc', ASCENDING),
-                                         ('function_name', ASCENDING)],
-                                        unique=True, sparse=False)
+        elif collection_name == MongoCatalogDBI._VOLUME_MOUNTS:
+            collection.create_index([('client_group', ASCENDING),
+                                            ('module_name_lc', ASCENDING),
+                                            ('function_name', ASCENDING)],
+                                            unique=True, sparse=False)
 
         # hidden configuration parameters
-        self.secure_config_params.create_index('module_name_lc')
-        self.secure_config_params.create_index([
-            ('module_name_lc', ASCENDING),
-            ('version', ASCENDING),
-            ('param_name', ASCENDING)],
-            unique=True, sparse=False)
+        elif collection_name == MongoCatalogDBI._SECURE_CONFIG_PARAMS:
+            collection.create_index('module_name_lc')
+            collection.create_index([
+                ('module_name_lc', ASCENDING),
+                ('version', ASCENDING),
+                ('param_name', ASCENDING)],
+                unique=True, sparse=False)
 
     def is_registered(self, module_name='', git_url=''):
         if not module_name and not git_url:
