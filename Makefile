@@ -27,11 +27,6 @@ LIB_DIR = lib
 
 PATH := kb_sdk/bin:$(PATH)
 
-default: init
-
-init:
-	git submodule init
-	git submodule update
 
 compile-kb-module:
 	kb-sdk compile $(SPEC_FILE) \

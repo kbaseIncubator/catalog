@@ -133,7 +133,7 @@ class MongoCatalogDBI:
         self._mongo_client_initialized = False
         self.mongo = None
         self.db = None
-        self.index_created = defaultdict(int)
+        self.index_created = defaultdict(bool)
         self._db_schema_checked = False
 
     def _initialize_mongo_client(self):
@@ -174,7 +174,7 @@ class MongoCatalogDBI:
         self._initialize_mongo_client()
         if not self.index_created[collection_name]:
             self._create_indexes(collection_name)
-            self.index_created[collection_name] = 1
+            self.index_created[collection_name] = True
         return self.db[collection_name]
 
     # Define getters for each collection
