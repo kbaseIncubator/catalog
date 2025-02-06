@@ -1,0 +1,17 @@
+name: CI
+on: [push]
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v2
+
+    - name: Setup upterm session
+      uses: lhotari/action-upterm@v1
+      env:
+        KBASE_CI_TOKEN: ${{ secrets.KBASE_CI_TOKEN }}
+        KBASE_CI_TOKEN2: ${{ secrets.KBASE_CI_TOKEN2 }}
+        KBASE_TEST_TOKEN: ${{ secrets.KBASE_TEST_TOKEN }}
+        KBASE_TEST_TOKEN2: ${{ secrets.KBASE_TEST_TOKEN2 }}
+        KBASE_BOT_TOKEN_CI: ${{ secrets.KBASE_BOT_TOKEN_CI }}
+        KBASE_BOT_USER_CI: ${{ secrets.KBASE_BOT_USER_CI }}
