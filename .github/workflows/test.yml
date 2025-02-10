@@ -29,7 +29,7 @@ jobs:
       mongo:
         image: mongo:${{matrix.mongo-version}}
         ports:
-            - 27018:27017
+            - 27017:27017
         options: --name mongo${{matrix.mongo-version}}
 
     steps:
@@ -50,7 +50,7 @@ jobs:
         run: |
 
           # test mongo connection
-          curl http://localhost:27018
+          curl http://localhost:27017
           returncode=$?
           if [ $returncode != 0 ]; then exit $returncode; fi
 
