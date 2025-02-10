@@ -11,7 +11,7 @@
 # start the test NMS endpoint
 echo 'Starting NMS...'
 export KB_DEPLOYMENT_CONFIG=test.cfg
-docker-compose -f docker-compose_nms.yml up -d
+docker compose -f docker-compose_nms.yml up -d
 NMS_PID=$!
 
 echo 'Starting Mock Auth API...'
@@ -56,7 +56,7 @@ echo "unit tests returned with error code=${TEST_RETURN_CODE}"
 ####  SHUTDOWN stuff and exit
 
 # stop NMS
-docker-compose -f docker-compose_nms.yml down
+docker compose -f docker-compose_nms.yml down
 
 #stop Docker containers
 docker stop mock-auth
