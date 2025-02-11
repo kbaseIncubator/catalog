@@ -75,8 +75,7 @@ jobs:
           sed -i "s#^nms-admin-token.*#nms-admin-token=$KBASE_CI_TOKEN#" test/test.cfg
           sed -i "s#^method-spec-admin-users.*#method-spec-admin-users=$ADMIN_USER#" test/test.cfg
 
-          # setup env variables in docker-compose_nms.yml file
-          echo "ADMIN_USER=$ADMIN_USER"
+          # This env var is used in the catalog test docker compose file for starting NMS
           echo "ADMIN_USER=$ADMIN_USER" >> $GITHUB_ENV
 
       - name: Run tests
