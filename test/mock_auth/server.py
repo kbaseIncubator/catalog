@@ -17,7 +17,8 @@ if not os.path.exists('/config'):
     sys.exit(1)
 
 endpoints = []
-# The order is preserved here to ensure routes capture requests correctly.
+# Mock server serves routes in a specific order, and this is the current order required for the tests to pass.
+# Changing the order may cause the tests to fail, so it's important to maintain this sequence.
 catalog_mock_auth = ['auth_admin.json', 'auth_invalid.json', 'auth_missing.json', 'auth_non_admin.json']
 for path in catalog_mock_auth:
     if path.endswith('.json'):
