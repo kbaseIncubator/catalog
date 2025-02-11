@@ -129,7 +129,12 @@ class MongoCatalogDBI:
         self.mongo_psswd = mongo_psswd
         self.mongo_authMechanism = mongo_authMechanism
 
-        # MongoDB client and database initialization deferred
+        # The MongoDB client and database initialization are deferred in lazy loading
+        # to prevent issues with forking processes. When the client is initialized before forking,
+        # it can cause race conditions or unsafe operations, triggering the error "MongoClient opened before fork."
+        # By deferring the initialization, the client is only created when needed,
+        # avoiding the potential conflicts with forking and ensuring safer operation in multi-process environments.
+        # https://pymongo.readthedocs.io/en/stable/faq.html#is-pymongo-fork-safe
         self._mongo_client_initialized = False
         self.mongo = None
         self.db = None
@@ -140,6 +145,7 @@ class MongoCatalogDBI:
         """Initialize MongoDB client and collections lazily."""
         if not self._mongo_client_initialized:
             try:
+                # This is only tested manually
                 if self.mongo_user and self.mongo_psswd:
                     # Connection string with authentication
                     self.mongo = MongoClient(
