@@ -32,6 +32,11 @@ jobs:
             - 27017:27017
         options: --name mongo${{matrix.mongo-version}}
 
+    env:
+      KBASE_CI_TOKEN: ${{ secrets.KBASE_CI_TOKEN }}
+      # This env var is also used in the catalog test docker compose file for starting NMS
+      ADMIN_USER: ${{ secrets.KBASE_BOT_USER_CI }}
+
     steps:
       - name: Repo checkout
         uses: actions/checkout@v4
@@ -43,9 +48,6 @@ jobs:
 
       - name: Install dependencies and set up test config
         shell: bash
-        env:
-          KBASE_CI_TOKEN: ${{ secrets.KBASE_CI_TOKEN }}
-          ADMIN_USER: ${{ secrets.KBASE_BOT_USER_CI }}
 
         run: |
 
@@ -74,9 +76,6 @@ jobs:
           cp -n test/test.cfg.example test/test.cfg
           sed -i "s#^nms-admin-token.*#nms-admin-token=$KBASE_CI_TOKEN#" test/test.cfg
           sed -i "s#^method-spec-admin-users.*#method-spec-admin-users=$ADMIN_USER#" test/test.cfg
-
-          # This env var is used in the catalog test docker compose file for starting NMS
-          echo "ADMIN_USER=$ADMIN_USER" >> $GITHUB_ENV
 
       - name: Run tests
         shell: bash
