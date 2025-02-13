@@ -166,7 +166,10 @@ class MongoCatalogDBI:
                 self._mongo_client_initialized = True
 
                 # Check db schema
-                self.check_db_schema()
+                if not self._db_schema_checked:
+                    self.check_db_schema()
+                    # Mark that we've checked the schema
+                    self._db_schema_checked = True
 
             except ConnectionFailure as e:
                 error_msg = "Cannot connect to Mongo server\n"
@@ -1365,12 +1368,6 @@ class MongoCatalogDBI:
     # todo: add 'in-progress' flag so if something goes done during an update, or if
     # another server is already starting an update, we can skip or abort
     def check_db_schema(self):
-
-        if self._db_schema_checked:
-            return
-
-        # Mark that we've checked the schema
-        self._db_schema_checked = True
 
         db_version = self.get_db_version()
         print('db_version=' + str(db_version))
