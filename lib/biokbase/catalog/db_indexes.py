@@ -116,3 +116,17 @@ class DBIndexes:
             ],
         }
         return index_creation_map.get(collection_name, [])
+
+    @staticmethod
+    def create_indexes(collection, indexes):
+        # Loop through and create indexes
+        for index in indexes:
+            if isinstance(index, tuple):
+                # Index with unique, and sparse flag
+                collection.create_index(index[0], unique=index[1], sparse=index[2])
+            elif isinstance(index, list):
+                # Index with multiple fields, unique, and sparse flags
+                collection.create_index(index[:-2], unique=index[-2], sparse=index[-1])
+            else:
+                # Single field index
+                collection.create_index(index)

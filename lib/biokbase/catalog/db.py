@@ -240,21 +240,8 @@ class MongoCatalogDBI:
     def _create_indexes(self, collection_name):
         """Create indexes for the given collection lazily."""
         collection = self.db[collection_name]
-
-        # Get the indexes for the collection from the DBIndexes class
         indexes = DBIndexes.get_indexes(collection_name)
-
-        # Loop through and create indexes
-        for index in indexes:
-            if isinstance(index, tuple):
-                # Index with unique, and sparse flag
-                collection.create_index(index[0], unique=index[1], sparse=index[2])
-            elif isinstance(index, list):
-                # index with multiple fields, unqie, and sparse flags
-                collection.create_index(index[:-2], unique=index[-2], sparse=index[-1])
-            else:
-                # Single field index
-                collection.create_index(index)
+        DBIndexes.create_indexes(collection, indexes)
 
     def is_registered(self, module_name='', git_url=''):
         if not module_name and not git_url:
