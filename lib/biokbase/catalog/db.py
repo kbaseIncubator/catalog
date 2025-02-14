@@ -8,6 +8,8 @@ from pymongo import DESCENDING
 from pymongo import MongoClient
 from pymongo.errors import ConnectionFailure
 
+from biokbase.catalog.db_indexes import DBIndexes
+
 '''
 
 1) User registers git_repo git_url
@@ -239,110 +241,20 @@ class MongoCatalogDBI:
         """Create indexes for the given collection lazily."""
         collection = self.db[collection_name]
 
-        # Make sure we have an index on module and git_repo_url
-        if collection_name == MongoCatalogDBI._MODULE_VERSIONS:
-            collection.create_index('module_name_lc', sparse=False)
-            collection.create_index('git_commit_hash', sparse=False)
-            collection.create_index([
-                ('module_name_lc', ASCENDING),
-                ('git_commit_hash', ASCENDING)],
-                unique=True, sparse=False)
+        # Get the indexes for the collection from the DBIndexes class
+        indexes = DBIndexes.get_indexes(collection_name)
 
-        elif collection_name == MongoCatalogDBI._LOCAL_FUNCTIONS:
-        # Make sure we have a unique index on module_name_lc and git_commit_hash
-            collection.create_index('function_id')
-            collection.create_index([
-                ('module_name_lc', ASCENDING),
-                ('function_id', ASCENDING),
-                ('git_commit_hash', ASCENDING)],
-                unique=True, sparse=False)
-
-            # local function indecies
-            collection.create_index('module_name_lc')
-            collection.create_index('git_commit_hash')
-            collection.create_index('function_id')
-            collection.create_index([
-                ('module_name_lc', ASCENDING),
-                ('function_id', ASCENDING),
-                ('git_commit_hash', ASCENDING)],
-                unique=True, sparse=False)
-
-        # developers indecies
-        elif collection_name == MongoCatalogDBI._DEVELOPERS:
-            collection.create_index('kb_username', unique=True)
-
-        elif collection_name == MongoCatalogDBI._BUILD_LOGS:
-            collection.create_index('registration_id', unique=True)
-            collection.create_index('module_name_lc')
-            collection.create_index('timestamp')
-            collection.create_index('registration')
-            collection.create_index('git_url')
-            collection.create_index('current_versions.release.release_timestamp')
-
-        # for favorites
-        elif collection_name == MongoCatalogDBI._FAVORITES:
-            collection.create_index('user')
-            collection.create_index('module_name_lc')
-            collection.create_index('id')
-            # you can only favorite a method once, so put a unique index on the triple
-            collection.create_index([
-                ('user', ASCENDING),
-                ('id', ASCENDING),
-                ('module_name_lc', ASCENDING)],
-                unique=True, sparse=False)
-
-        # execution stats
-        elif collection_name == MongoCatalogDBI._EXEC_STATS_RAW:
-            collection.create_index('user_id',
-                                            unique=False, sparse=False)
-            collection.create_index([('app_module_name', ASCENDING),
-                                            ('app_id', ASCENDING)],
-                                            unique=False, sparse=True)
-            collection.create_index([('func_module_name', ASCENDING),
-                                            ('func_name', ASCENDING)],
-                                            unique=False, sparse=True)
-            collection.create_index('creation_time',
-                                            unique=False, sparse=False)
-            collection.create_index('finish_time',
-                                            unique=False, sparse=False)
-
-        elif collection_name == MongoCatalogDBI._EXEC_STATS_APPS:
-            collection.create_index('module_name',
-                                            unique=False, sparse=True)
-            collection.create_index([('full_app_id', ASCENDING),
-                                            ('type', ASCENDING),
-                                            ('time_range', ASCENDING)],
-                                            unique=True, sparse=False)
-            collection.create_index([('type', ASCENDING),
-                                            ('time_range', ASCENDING)],
-                                            unique=False, sparse=False)
-
-        elif collection_name == MongoCatalogDBI._EXEC_STATS_USERS:
-            collection.create_index([('user_id', ASCENDING),
-                                                ('type', ASCENDING),
-                                                ('time_range', ASCENDING)],
-                                            unique=True, sparse=False)
-
-        # client groups and volume mounts
-        elif collection_name == MongoCatalogDBI._CLIENT_GROUPS:
-            collection.create_index([('module_name_lc', ASCENDING),
-                                         ('function_name', ASCENDING)],
-                                        unique=True, sparse=False)
-
-        elif collection_name == MongoCatalogDBI._VOLUME_MOUNTS:
-            collection.create_index([('client_group', ASCENDING),
-                                            ('module_name_lc', ASCENDING),
-                                            ('function_name', ASCENDING)],
-                                            unique=True, sparse=False)
-
-        # hidden configuration parameters
-        elif collection_name == MongoCatalogDBI._SECURE_CONFIG_PARAMS:
-            collection.create_index('module_name_lc')
-            collection.create_index([
-                ('module_name_lc', ASCENDING),
-                ('version', ASCENDING),
-                ('param_name', ASCENDING)],
-                unique=True, sparse=False)
+        # Loop through and create indexes
+        for index in indexes:
+            if isinstance(index, tuple):
+                # Index with unique, and sparse flag
+                collection.create_index(index[0], unique=index[1], sparse=index[2])
+            elif isinstance(index, list):
+                # index with multiple fields, unqie, and sparse flags
+                collection.create_index(index[:-2], unique=index[-2], sparse=index[-1])
+            else:
+                # Single field index
+                collection.create_index(index)
 
     def is_registered(self, module_name='', git_url=''):
         if not module_name and not git_url:
