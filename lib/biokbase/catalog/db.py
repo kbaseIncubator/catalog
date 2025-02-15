@@ -1,9 +1,14 @@
 import copy
 import pprint
+import traceback
+from collections import defaultdict
 
 from pymongo import ASCENDING
 from pymongo import DESCENDING
 from pymongo import MongoClient
+from pymongo.errors import ConnectionFailure
+
+from biokbase.catalog.db_indexes import DBIndexes
 
 '''
 
@@ -120,130 +125,123 @@ class MongoCatalogDBI:
 
     def __init__(self, mongo_host, mongo_db, mongo_user, mongo_psswd, mongo_authMechanism):
 
-        # create the client
-        self.mongo = MongoClient('mongodb://' + mongo_host)
+        self.mongo_host = mongo_host
+        self.mongo_db = mongo_db
+        self.mongo_user = mongo_user
+        self.mongo_psswd = mongo_psswd
+        self.mongo_authMechanism = mongo_authMechanism
 
-        # Try to authenticate, will throw an exception if the user/psswd is not valid for the db
-        # the pymongo docs say authenticate() is deprecated, but testing putting auth in
-        # the MongoClient call failed
-        # to do: add authMechanism as an argument
-        if (mongo_user and mongo_psswd):
-            self.mongo[mongo_db].authenticate(mongo_user, mongo_psswd, mechanism=mongo_authMechanism)
+        # The MongoDB client and database initialization are deferred in lazy loading
+        # to prevent issues with forking processes. When the client is initialized before forking,
+        # it can cause race conditions or unsafe operations, triggering the error "MongoClient opened before fork."
+        # By deferring the initialization, the client is only created when needed,
+        # avoiding the potential conflicts with forking and ensuring safer operation in multi-process environments.
+        # https://pymongo.readthedocs.io/en/stable/faq.html#is-pymongo-fork-safe
+        self._mongo_client_initialized = False
+        self.mongo = None
+        self.db = None
+        self.index_created = defaultdict(bool)
+        self._db_schema_checked = False
 
-        # Grab a handle to the database and collections
-        self.db = self.mongo[mongo_db]
-        self.modules = self.db[MongoCatalogDBI._MODULES]
-        self.module_versions = self.db[MongoCatalogDBI._MODULE_VERSIONS]
+    def _initialize_mongo_client(self):
+        """Initialize MongoDB client and collections lazily."""
+        if not self._mongo_client_initialized:
+            try:
+                # This is only tested manually
+                if self.mongo_user and self.mongo_psswd:
+                    # Connection string with authentication
+                    self.mongo = MongoClient(
+                        f"mongodb://{self.mongo_user}:{self.mongo_psswd}@{self.mongo_host}/{self.mongo_db}?authMechanism={self.mongo_authMechanism}"
+                    )
+                else:
+                    # Connection string without authentication
+                    self.mongo = MongoClient(f"mongodb://{self.mongo_host}")
 
-        self.local_functions = self.db[MongoCatalogDBI._LOCAL_FUNCTIONS]
-        self.developers = self.db[MongoCatalogDBI._DEVELOPERS]
-        self.build_logs = self.db[MongoCatalogDBI._BUILD_LOGS]
-        self.favorites = self.db[MongoCatalogDBI._FAVORITES]
-        self.client_groups = self.db[MongoCatalogDBI._CLIENT_GROUPS]
-        self.volume_mounts = self.db[MongoCatalogDBI._VOLUME_MOUNTS]
+                # Force a call to server to verify the connection
+                self.mongo.server_info()
+                print("Connection successful!")
 
-        self.exec_stats_raw = self.db[MongoCatalogDBI._EXEC_STATS_RAW]
-        self.exec_stats_apps = self.db[MongoCatalogDBI._EXEC_STATS_APPS]
-        self.exec_stats_users = self.db[MongoCatalogDBI._EXEC_STATS_USERS]
+                # Grab a handle to the database
+                self.db = self.mongo[self.mongo_db]
 
-        self.secure_config_params = self.db[MongoCatalogDBI._SECURE_CONFIG_PARAMS]
+                # Mark the client as initialized
+                self._mongo_client_initialized = True
 
-        # check the db schema
-        self.check_db_schema()
+                # Check db schema
+                if not self._db_schema_checked:
+                    self.check_db_schema()
+                    # Mark that we've checked the schema
+                    self._db_schema_checked = True
 
-        # Make sure we have an index on module and git_repo_url
-        self.module_versions.create_index('module_name_lc', sparse=False)
-        self.module_versions.create_index('git_commit_hash', sparse=False)
-        self.module_versions.create_index([
-            ('module_name_lc', ASCENDING),
-            ('git_commit_hash', ASCENDING)],
-            unique=True, sparse=False)
+            except ConnectionFailure as e:
+                error_msg = "Cannot connect to Mongo server\n"
+                error_msg += "ERROR -- {}:\n{}".format(
+                    e, "".join(traceback.format_exception(None, e, e.__traceback__))
+                )
+                raise ValueError(error_msg)
 
-        # Make sure we have a unique index on module_name_lc and git_commit_hash
-        self.local_functions.create_index('function_id')
-        self.local_functions.create_index([
-            ('module_name_lc', ASCENDING),
-            ('function_id', ASCENDING),
-            ('git_commit_hash', ASCENDING)],
-            unique=True, sparse=False)
+    def _get_collection(self, collection_name):
+        """Lazily load collections."""
+        self._initialize_mongo_client()
+        if not self.index_created[collection_name]:
+            self._create_indexes(collection_name)
+            self.index_created[collection_name] = True
+        return self.db[collection_name]
 
-        # local function indecies
-        self.local_functions.create_index('module_name_lc')
-        self.local_functions.create_index('git_commit_hash')
-        self.local_functions.create_index('function_id')
-        self.local_functions.create_index([
-            ('module_name_lc', ASCENDING),
-            ('function_id', ASCENDING),
-            ('git_commit_hash', ASCENDING)],
-            unique=True, sparse=False)
+    # Define getters for each collection
+    @property
+    def modules(self):
+        return self._get_collection(MongoCatalogDBI._MODULES)
 
-        # developers indecies
-        self.developers.create_index('kb_username', unique=True)
+    @property
+    def module_versions(self):
+        return self._get_collection(MongoCatalogDBI._MODULE_VERSIONS)
 
-        self.build_logs.create_index('registration_id', unique=True)
-        self.build_logs.create_index('module_name_lc')
-        self.build_logs.create_index('timestamp')
-        self.build_logs.create_index('registration')
-        self.build_logs.create_index('git_url')
-        self.build_logs.create_index('current_versions.release.release_timestamp')
+    @property
+    def local_functions(self):
+        return self._get_collection(MongoCatalogDBI._LOCAL_FUNCTIONS)
 
-        # for favorites
-        self.favorites.create_index('user')
-        self.favorites.create_index('module_name_lc')
-        self.favorites.create_index('id')
-        # you can only favorite a method once, so put a unique index on the triple
-        self.favorites.create_index([
-            ('user', ASCENDING),
-            ('id', ASCENDING),
-            ('module_name_lc', ASCENDING)],
-            unique=True, sparse=False)
+    @property
+    def developers(self):
+        return self._get_collection(MongoCatalogDBI._DEVELOPERS)
 
-        # execution stats
-        self.exec_stats_raw.create_index('user_id',
-                                         unique=False, sparse=False)
-        self.exec_stats_raw.create_index([('app_module_name', ASCENDING),
-                                          ('app_id', ASCENDING)],
-                                         unique=False, sparse=True)
-        self.exec_stats_raw.create_index([('func_module_name', ASCENDING),
-                                          ('func_name', ASCENDING)],
-                                         unique=False, sparse=True)
-        self.exec_stats_raw.create_index('creation_time',
-                                         unique=False, sparse=False)
-        self.exec_stats_raw.create_index('finish_time',
-                                         unique=False, sparse=False)
+    @property
+    def build_logs(self):
+        return self._get_collection(MongoCatalogDBI._BUILD_LOGS)
 
-        self.exec_stats_apps.create_index('module_name',
-                                          unique=False, sparse=True)
-        self.exec_stats_apps.create_index([('full_app_id', ASCENDING),
-                                           ('type', ASCENDING),
-                                           ('time_range', ASCENDING)],
-                                          unique=True, sparse=False)
-        self.exec_stats_apps.create_index([('type', ASCENDING),
-                                           ('time_range', ASCENDING)],
-                                          unique=False, sparse=False)
+    @property
+    def favorites(self):
+        return self._get_collection(MongoCatalogDBI._FAVORITES)
 
-        self.exec_stats_users.create_index([('user_id', ASCENDING),
-                                            ('type', ASCENDING),
-                                            ('time_range', ASCENDING)],
-                                           unique=True, sparse=False)
+    @property
+    def client_groups(self):
+        return self._get_collection(MongoCatalogDBI._CLIENT_GROUPS)
 
-        # client groups and volume mounts
-        self.client_groups.create_index([('module_name_lc', ASCENDING),
-                                         ('function_name', ASCENDING)],
-                                        unique=True, sparse=False)
+    @property
+    def volume_mounts(self):
+        return self._get_collection(MongoCatalogDBI._VOLUME_MOUNTS)
 
-        self.volume_mounts.create_index([('client_group', ASCENDING),
-                                         ('module_name_lc', ASCENDING),
-                                         ('function_name', ASCENDING)],
-                                        unique=True, sparse=False)
+    @property
+    def exec_stats_raw(self):
+        return self._get_collection(MongoCatalogDBI._EXEC_STATS_RAW)
 
-        # hidden configuration parameters
-        self.secure_config_params.create_index('module_name_lc')
-        self.secure_config_params.create_index([
-            ('module_name_lc', ASCENDING),
-            ('version', ASCENDING),
-            ('param_name', ASCENDING)],
-            unique=True, sparse=False)
+    @property
+    def exec_stats_apps(self):
+        return self._get_collection(MongoCatalogDBI._EXEC_STATS_APPS)
+
+    @property
+    def exec_stats_users(self):
+        return self._get_collection(MongoCatalogDBI._EXEC_STATS_USERS)
+
+    @property
+    def secure_config_params(self):
+        return self._get_collection(MongoCatalogDBI._SECURE_CONFIG_PARAMS)
+
+    def _create_indexes(self, collection_name):
+        """Create indexes for the given collection lazily."""
+        collection = self.db[collection_name]
+        indexes = DBIndexes.get_indexes(collection_name)
+        DBIndexes.create_indexes(collection, indexes)
 
     def is_registered(self, module_name='', git_url=''):
         if not module_name and not git_url:
@@ -337,7 +335,7 @@ class MongoCatalogDBI:
             query, selection,
             skip=skip,
             limit=limit,
-            sort=[['timestamp', DESCENDING]]))
+            sort=[('timestamp', DESCENDING)]))
 
     # slice arg is used in the mongo query for getting lines.  It is either a
     # pos int (get first n lines), neg int (last n lines), or array [skip, limit]
@@ -931,16 +929,12 @@ class MongoCatalogDBI:
     def list_user_favorites(self, username):
         query = {'user': username}
         selection = {'_id': 0, 'module_name_lc': 1, 'id': 1, 'timestamp': 1}
-        return list(self.favorites.find(
-            query, selection,
-            sort=[['timestamp', DESCENDING]]))
+        return list(self.favorites.find(query, selection).sort('timestamp', DESCENDING))
 
     def list_app_favorites(self, module_name, app_id):
         query = {'module_name_lc': module_name.strip().lower(), 'id': app_id.strip()}
         selection = {'_id': 0, 'user': 1, 'timestamp': 1}
-        return list(self.favorites.find(
-            query, selection,
-            sort=[['timestamp', DESCENDING]]))
+        return list(self.favorites.find(query, selection).sort('timestamp', DESCENDING))
 
     def aggregate_favorites_over_apps(self, module_names_lc):
         ### WARNING! If we switch to Mongo 3.x, the result object will change and this will break
@@ -1302,7 +1296,7 @@ class MongoCatalogDBI:
                 '. You are probably running an old version of the service.  Start up failed.')
 
     def get_db_version(self):
-        # version is a collection that should only have a single 
+        # version is a collection that should only have a single
         version_collection = self.db[MongoCatalogDBI._DB_VERSION]
         ver = version_collection.find_one({})
         if (ver):
@@ -1322,13 +1316,14 @@ class MongoCatalogDBI:
     # version 1 kept released module versions in a map, version 2 updates that to a list
     # and adds dynamic service tags
     def update_db_1_to_2(self):
-        for m in self.modules.find({'release_versions': {'$exists': True}}):
+        modules_collection = self.db[MongoCatalogDBI._MODULES]
+        for m in modules_collection.find({'release_versions': {'$exists': True}}):
             release_version_list = []
             for timestamp in m['release_versions']:
                 m['release_versions'][timestamp]['dynamic_service'] = 0
                 release_version_list.append(m['release_versions'][timestamp])
 
-            self.modules.update_one(
+            modules_collection.update_one(
                 {'_id': m['_id']},
                 {
                     '$unset': {'release_versions': ''},
@@ -1337,49 +1332,52 @@ class MongoCatalogDBI:
 
             # make sure everything has the dynamic service flag
             if not 'dynamic_service' in m['info']:
-                self.modules.update_one(
+                modules_collection.update_one(
                     {'_id': m['_id']},
                     {'$set': {'info.dynamic_service': 0}})
 
             if m['current_versions']['release']:
                 if not 'dynamic_service' in m['current_versions']['release']:
-                    self.modules.update_one(
+                    modules_collection.update_one(
                         {'_id': m['_id']},
                         {'$set': {'current_versions.release.dynamic_service': 0}})
 
             if m['current_versions']['beta']:
                 if not 'dynamic_service' in m['current_versions']['beta']:
-                    self.modules.update_one(
+                    modules_collection.update_one(
                         {'_id': m['_id']},
                         {'$set': {'current_versions.beta.dynamic_service': 0}})
 
             if m['current_versions']['dev']:
                 if not 'dynamic_service' in m['current_versions']['dev']:
-                    self.modules.update_one(
+                    modules_collection.update_one(
                         {'_id': m['_id']},
                         {'$set': {'current_versions.dev.dynamic_service': 0}})
 
         # also ensure the execution stats fields have correct names
-        self.exec_stats_apps.update_many({'avg_queue_time': {'$exists': True}},
+        exec_stats_apps_colleciton = self.db[MongoCatalogDBI._EXEC_STATS_APPS]
+        exec_stats_apps_colleciton.update_many({'avg_queue_time': {'$exists': True}},
                                          {'$rename': {'avg_queue_time': 'total_queue_time',
                                                       'avg_exec_time': 'total_exec_time'}})
-        self.exec_stats_users.update_many({'avg_queue_time': {'$exists': True}},
+        exec_stats_apps_colleciton.update_many({'avg_queue_time': {'$exists': True}},
                                           {'$rename': {'avg_queue_time': 'total_queue_time',
                                                        'avg_exec_time': 'total_exec_time'}})
 
     # version 3 moves the module version information out of the module document into
-    # a separate module versions collection.  
+    # a separate module versions collection.
     def update_db_2_to_3(self):
 
-        self.module_versions.create_index('module_name_lc', sparse=False)
-        self.module_versions.create_index('git_commit_hash', sparse=False)
-        self.module_versions.create_index([
+        module_versions_collection = self.db[MongoCatalogDBI._MODULE_VERSIONS]
+        module_versions_collection.create_index('module_name_lc', sparse=False)
+        module_versions_collection.create_index('git_commit_hash', sparse=False)
+        module_versions_collection.create_index([
             ('module_name_lc', ASCENDING),
             ('git_commit_hash', ASCENDING)],
             unique=True, sparse=False)
 
+        modules_collection = self.db[MongoCatalogDBI._MODULES]
         # update all module versions
-        for m in self.modules.find({}):
+        for m in modules_collection.find({}):
 
             # skip modules that have not been properly registered, might want to delete these later
             if 'module_name' not in m or 'module_name_lc' not in m:
@@ -1395,14 +1393,14 @@ class MongoCatalogDBI:
                 rVer['released'] = 1
                 self.prepare_version_doc_for_db_2_to_3_update(rVer, m)
                 try:
-                    self.module_versions.insert_one(rVer)
+                    module_versions_collection.insert_one(rVer)
                 except:
                     print(' - Warning - ' + rVer['module_name'] + '.' + rVer[
                         'git_commit_hash'] + ' already inserted, skipping.')
                 new_release_version_list.append({
                     'git_commit_hash': rVer['git_commit_hash']
                 })
-            self.modules.update_one(
+            modules_collection.update_one(
                 {'_id': m['_id']},
                 {'$set': {'release_version_list': new_release_version_list}}
             )
@@ -1415,19 +1413,19 @@ class MongoCatalogDBI:
                     self.prepare_version_doc_for_db_2_to_3_update(modVer, m)
                     if modVer.get('git_commit_hash') is not None:
                         try:
-                            self.module_versions.insert_one(modVer)
+                            module_versions_collection.insert_one(modVer)
                         except Exception as e:
                             # we expect this to happen for all 'release' tags and if, say, a
                             # version still tagged as dev/beta has been released
                             print(f" - Warning - {tag} ver of {modVer['module_name']}."
                                   f"{modVer['git_commit_hash']} already inserted, skipping.")
-                        self.modules.update_one(
+                        modules_collection.update_one(
                             {'_id': m['_id']},
                             {'$set': {'current_versions.' + tag: {
                                 'git_commit_hash': modVer['git_commit_hash']}}}
                         )
                     else:
-                        self.modules.update_one(
+                        modules_collection.update_one(
                             {'_id': m['_id']},
                             {'$set': {'current_versions.' + tag: None}}
                         )
@@ -1455,20 +1453,23 @@ class MongoCatalogDBI:
     def update_db_3_to_4(self):
 
         # make sure we don't have any indecies on the collections
-        self.volume_mounts.drop_indexes()
-        self.client_groups.drop_indexes()
+        volume_mounts_collection = self.db[MongoCatalogDBI._VOLUME_MOUNTS]
+        client_groups_collection = self.db[MongoCatalogDBI._CLIENT_GROUPS]
+
+        volume_mounts_collection.drop_indexes()
+        client_groups_collection.drop_indexes()
 
         # update the volume_mounts, just need to rename app_id to function_name
-        for vm in self.volume_mounts.find({}):
+        for vm in volume_mounts_collection.find({}):
             if 'app_id' in vm and 'function_name' not in vm:
-                self.volume_mounts.update_one(
+                volume_mounts_collection.update_one(
                     {'_id': vm['_id']},
                     {'$set': {'function_name': vm['app_id']}, '$unset': {'app_id': 1}}
                 )
 
-        for cg in self.client_groups.find({}):
+        for cg in client_groups_collection.find({}):
             if 'app_id' in cg:
-                self.client_groups.delete_one({'_id': cg['_id']})
+                client_groups_collection.delete_one({'_id': cg['_id']})
                 tokens = cg['app_id'].split('/')
                 if len(tokens) != 2:
                     print(
@@ -1480,4 +1481,4 @@ class MongoCatalogDBI:
                     'function_name': tokens[1],
                     'client_groups': cg['client_groups']
                 }
-                self.client_groups.insert_one(new_cg)
+                client_groups_collection.insert_one(new_cg)
