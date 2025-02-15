@@ -1,3 +1,7 @@
+# We are replacing this file in the mock_auth server container so that the Mock server serves routes
+# in a specific order, which will allow the test to pass. The original code uses os.listdir(),
+# which does not guarantee preserving the order of the JSON files in the config directory.
+
 import os
 import sys
 import json
